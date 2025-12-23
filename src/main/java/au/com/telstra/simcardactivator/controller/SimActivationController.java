@@ -1,15 +1,14 @@
 package au.com.telstra.simcardactivator.controller;
 
-import au.com.telstra.simcardactivator.dto.ActivationRequest;
-import au.com.telstra.simcardactivator.dto.ActivationStatusResponse;
-import au.com.telstra.simcardactivator.dto.ActuatorRequest;
-import au.com.telstra.simcardactivator.dto.ActuatorResponse;
+import au.com.telstra.simcardactivator.dto.*;
 import au.com.telstra.simcardactivator.entity.SimActivation;
 import au.com.telstra.simcardactivator.repository.SimActivationRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.server.ResponseStatusException;
 
 @RestController
 @RequestMapping("/activate-sim")
@@ -25,7 +24,14 @@ public class SimActivationController {
     @PostMapping
     public ResponseEntity<String> activateSim(@RequestBody ActivationRequest request) {
 
-        // Call actuator service
+        // ✅ Input validation (Bug fix #3)
+        if (request == null || request.getIccid() == null || request.getCustomerEmail() == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "ICCID and customer email must be provided"
+            );
+        }
+
         ActuatorRequest actuatorRequest = new ActuatorRequest();
         actuatorRequest.setIccid(request.getIccid());
 
@@ -36,9 +42,25 @@ public class SimActivationController {
                         ActuatorResponse.class
                 );
 
-        boolean success = response.getBody().isSuccess();
+        // ✅ HTTP status validation (Bug fix #2)
+        if (!response.getStatusCode().is2xxSuccessful()) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_GATEWAY,
+                    "Actuator service failed"
+            );
+        }
 
-        // Save result in database
+        // ✅ Null safety check (Bug fix #1)
+        ActuatorResponse body = response.getBody();
+        if (body == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Empty response from actuator service"
+            );
+        }
+
+        boolean success = body.isSuccess();
+
         SimActivation activation = new SimActivation(
                 request.getIccid(),
                 request.getCustomerEmail(),

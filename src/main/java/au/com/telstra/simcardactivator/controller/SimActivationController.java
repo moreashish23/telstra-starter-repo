@@ -3,7 +3,7 @@ package au.com.telstra.simcardactivator.controller;
 import au.com.telstra.simcardactivator.dto.*;
 import au.com.telstra.simcardactivator.entity.SimActivation;
 import au.com.telstra.simcardactivator.repository.SimActivationRepository;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -14,17 +14,26 @@ import org.springframework.web.server.ResponseStatusException;
 @RequestMapping("/activate-sim")
 public class SimActivationController {
 
-    @Autowired
-    private RestTemplate restTemplate;
+    private final RestTemplate restTemplate;
+    private final SimActivationRepository simActivationRepository;
+    private final String actuatorServiceUrl;
 
-    @Autowired
-    private SimActivationRepository simActivationRepository;
+    //  Constructor Injection (Sonar Reliability Fix)
+    public SimActivationController(
+            RestTemplate restTemplate,
+            SimActivationRepository simActivationRepository,
+            @Value("${actuator.service.url}") String actuatorServiceUrl
+    ) {
+        this.restTemplate = restTemplate;
+        this.simActivationRepository = simActivationRepository;
+        this.actuatorServiceUrl = actuatorServiceUrl;
+    }
 
-    // POST: Activate SIM + Save result
+    //  POST: Activate SIM + Save result
     @PostMapping
     public ResponseEntity<String> activateSim(@RequestBody ActivationRequest request) {
 
-        // ✅ Input validation (Bug fix #3)
+        //  Input validation
         if (request == null || request.getIccid() == null || request.getCustomerEmail() == null) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
@@ -37,12 +46,12 @@ public class SimActivationController {
 
         ResponseEntity<ActuatorResponse> response =
                 restTemplate.postForEntity(
-                        "http://localhost:8444/actuate",
+                        actuatorServiceUrl,
                         actuatorRequest,
                         ActuatorResponse.class
                 );
 
-        // ✅ HTTP status validation (Bug fix #2)
+        // Validate HTTP response
         if (!response.getStatusCode().is2xxSuccessful()) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_GATEWAY,
@@ -50,7 +59,7 @@ public class SimActivationController {
             );
         }
 
-        // ✅ Null safety check (Bug fix #1)
+        // Null safety check
         ActuatorResponse body = response.getBody();
         if (body == null) {
             throw new ResponseStatusException(
@@ -61,6 +70,7 @@ public class SimActivationController {
 
         boolean success = body.isSuccess();
 
+        //  Persist activation result
         SimActivation activation = new SimActivation(
                 request.getIccid(),
                 request.getCustomerEmail(),
@@ -71,7 +81,7 @@ public class SimActivationController {
         return ResponseEntity.ok("Activation result: " + success);
     }
 
-    // GET: Fetch activation record by ID
+    //  GET: Fetch activation record by ID
     @GetMapping
     public ResponseEntity<ActivationStatusResponse> getSimActivation(
             @RequestParam Long simCardId) {
